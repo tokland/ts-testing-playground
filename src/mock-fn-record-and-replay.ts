@@ -4,6 +4,7 @@ import path from "path";
 
 import "./FulfillableMock";
 import { FulfillableMock } from "./FulfillableMock";
+import { jsonEquals, JsonValue } from "./json-equals";
 
 /**
  * Utility for creating snapshot-backed *record-and-replay* mocks for async functions in Vitest.
@@ -153,8 +154,6 @@ export function recordAndReplayFnCalls<Fn extends AnyAsyncFunction>(options: {
     return mockFn;
 }
 
-export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
-
 // Internal helpers
 
 type AnyAsyncFunction = (...args: any[]) => Promise<any>;
@@ -199,44 +198,4 @@ function getSnapshotFile(currentIndex: number, name: string): { contents: string
     const snapshotFilePath = path.join(snapshotsFolder, `${name}-call-${currentIndex + 1}.json`);
     const contents = fs.existsSync(snapshotFilePath) ? fs.readFileSync(snapshotFilePath, "utf-8") : null;
     return { contents: contents, path: snapshotFilePath };
-}
-
-// Deep equality for valid JSON values.
-export function jsonEquals(a: JsonValue, b: JsonValue): boolean {
-    // Are they equal by reference or value?
-    if (a === b) return true;
-
-    // If types differ or one is null and the other isn't, they're not equal
-    if (typeof a !== typeof b || a === null || b === null) {
-        return false;
-    }
-
-    // If one is array and the other isn't
-    if (Array.isArray(a) || Array.isArray(b)) {
-        return false;
-    }
-
-    // Both arrays
-    if (Array.isArray(a) && Array.isArray(b)) {
-        if (a.length !== b.length) {
-            return false;
-        } else {
-            return a.every((item, index) => jsonEquals(item, b[index] || null));
-        }
-    }
-
-    // Objects
-    const aObj = a as { [key: string]: JsonValue };
-    const bObj = b as { [key: string]: JsonValue };
-
-    const aKeys = Object.keys(aObj).sort();
-    const bKeys = Object.keys(bObj).sort();
-
-    if (aKeys.length !== bKeys.length) {
-        return false;
-    } else if (!aKeys.every((key, i) => key === bKeys[i])) {
-        return false;
-    } else {
-        return aKeys.every(key => jsonEquals(aObj[key] || null, bObj[key] || null));
-    }
 }
