@@ -1,9 +1,10 @@
 # Declarative Vitest Function Mocks
 
-A playground exploring **declarative** patterns for mocking functions in Vitest.
+This is a playground to explore **declarative** patterns for mocking functions in Vitest.
 
-Traditional mocks often combine setup, behavior, and expectations directly inside test bodies. This quickly becomes difficult to read, reason about, and maintain. This project explores patterns
-to write declarative and easy-to-mantain tests.
+Traditional mocks often combine convoluted imperative setup which usually become
+difficult to read, reason about, and maintain. This project explores patterns
+to write declarative and easy-to-mantain function mocks.
 
 ## Modules
 
@@ -30,10 +31,10 @@ Supports pluggable JSON serialization and runtime validation.
 
 Useful when:
 
-- You want **strict control** over call sequences.
 - Store **real external APIs data** without hand-maintaining them.
+- You want **strict control** over call sequences.
 - You want **snapshot diffs** to inspect behavioral changes.
-- One the snapshots are in-place, tests should be **deterministic**, **fast** and runnable **offline**.
+- (Once the snapshots are in-place) tests should be **deterministic**, **fast** and runnable **offline**.
 
 ## Running the Project
 
@@ -42,3 +43,7 @@ $ nvm use
 $ yarn install
 $ yarn test
 ```
+
+### LICENSE
+
+MIT

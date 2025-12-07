@@ -39,7 +39,8 @@
         "lint": "eslint .",
         "lint:check": "eslint .",
         "start": "node --enable-source-maps ./dist/index.js",
-        "test": "vitest"
+        "test": "vitest run",
+        "test:watch": "vitest"
     },
     "devDependencies": {
         "@babel/core": "7.28.5",

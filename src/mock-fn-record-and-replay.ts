@@ -29,7 +29,7 @@ import { jsonEquals, JsonValue } from "./json-equals";
  *
  * You must provide:
  *   - `serializeArgs` — converts the function's arguments into a JSON-compatible value.
- *   - `serializeReturnValue` — converts the resolved return value into JSON-compatible form.
+ *   - `serializeReturnValue` — converts the resolved return value into JSON-compatible value.
  *   - `deserializeReturnValue` — performs the inverse operation when replaying.
  *
  * These functions give you full control over the shape and type safety of your snapshots.
@@ -86,7 +86,7 @@ export function recordAndReplayFnCalls<Fn extends AnyAsyncFunction>(options: {
     const { serializeArgs, serializeReturnValue, deserializeReturnValue } = options;
     let index = 0;
 
-    const mockFn = vi.fn<AsyncFunction<Fn>>(async (...args) => {
+    const mockFn = vi.fn(async (...args: Parameters<Fn>): Promise<Awaited<ReturnType<Fn>>> => {
         const currentIndex = index++;
         const snapshotFile = getSnapshotFile(currentIndex, options.name);
         const updateMode = getSnapshotsUpdateMode();
@@ -101,7 +101,7 @@ export function recordAndReplayFnCalls<Fn extends AnyAsyncFunction>(options: {
                 throw new Error("Invariant broken");
             } else {
                 // No snapshot and we are in <new> or <all> mode, call the real function and snapshot
-                const returnValueReal = await options.realFunction(...args);
+                const returnValueReal = (await options.realFunction(...args)) as Awaited<ReturnType<Fn>>;
                 await expectCallMatchesSnapshot(snapshotFile.path, {
                     args: serializeArgs(args),
                     returnValue: serializeReturnValue(returnValueReal),
@@ -124,13 +124,13 @@ export function recordAndReplayFnCalls<Fn extends AnyAsyncFunction>(options: {
                 throw new Error("Unreachable");
             } else {
                 // Args do not match and we are in <all> mode, call the real function and snapshot
-                const realReturnValue = (await options.realFunction(...args)) as Awaited<ReturnType<Fn>>;
+                const realReturnValue = await options.realFunction(...args);
                 await expectCallMatchesSnapshot(snapshotFile.path, {
                     args: serializeArgs(args),
                     returnValue: serializeReturnValue(realReturnValue),
                 });
                 preventFurtherSnapshotUpdates();
-                return realReturnValue;
+                return realReturnValue as Awaited<ReturnType<Fn>>;
             }
         }
     }) as Mock<AsyncFunction<Fn>> & FulfillableMock;
@@ -141,9 +141,10 @@ export function recordAndReplayFnCalls<Fn extends AnyAsyncFunction>(options: {
 
         if (missingCalls.length > 0) {
             const msg = [
-                `${index} of ${snapshotFiles.length} calls were made. Missing calls:`,
+                `${index} of ${snapshotFiles.length} calls were made.`,
+                `The following calls are missing:`,
                 missingCalls.join("\n"),
-                `If any of these calls are not expected anymore, remove their snapshot files.`,
+                `If these calls are no longer relevant, delete their snapshot files.`,
             ].join("\n");
             return { success: false, error: msg };
         } else {
@@ -184,7 +185,7 @@ function getSnapshotFiles(name: string) {
 }
 
 function getSnapshotsUpdateMode(): "none" | "new" | "all" {
-    const mode = expect.getState().snapshotState["_updateSnapshot"];
+    const mode = expect.getState().snapshotState["_updateSnapshot"] as string;
 
     if (mode === "none" || mode === "new" || mode === "all") {
         return mode;
