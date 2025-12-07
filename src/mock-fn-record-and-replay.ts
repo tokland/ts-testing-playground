@@ -27,7 +27,7 @@ export function recordAndReplayFnCalls<Fn extends AnyAsyncFunction>(options: {
                     args: serializeArgs(args),
                     returnValue: null,
                 });
-                throw new Error(`Unreachable: No snapshot found and we are in update mode 'none'`);
+                throw new Error("Invariant broken");
             } else {
                 // No snapshot and we are in new or all mode, call the real function and snapshot
                 const returnValueReal = await options.realFunction(...args);
@@ -65,11 +65,11 @@ export function recordAndReplayFnCalls<Fn extends AnyAsyncFunction>(options: {
     }) as Mock<AsyncFunction<Fn>> & FulfillableMock;
 
     mockFn.isFulfilled = () => {
-        const snapFiles = getSnapshotFiles(options.name);
-        const missingCalls = snapFiles.slice(index).map(s => `  - ${s}`);
+        const snapshotFiles = getSnapshotFiles(options.name);
+        const missingCalls = snapshotFiles.slice(index).map(s => `  - ${s}`);
 
-        if (index < snapFiles.length) {
-            const msg = `${index} of ${snapFiles.length} calls made. Missing:\n${missingCalls.join("\n")}`;
+        if (index < snapshotFiles.length) {
+            const msg = `${index} of ${snapshotFiles.length} calls made. Missing:\n${missingCalls.join("\n")}`;
             return { success: false, error: msg };
         } else {
             return { success: true };
@@ -94,9 +94,9 @@ type SerializedCall = {
     returnValue: JsonValue;
 };
 
-function expectCallMatchesSnapshot(snapFilePath: string, call: SerializedCall) {
+function expectCallMatchesSnapshot(snapshotFilePath: string, call: SerializedCall) {
     const pretty = JSON.stringify(call, null, 4);
-    return expect(pretty).toMatchFileSnapshot(snapFilePath);
+    return expect(pretty).toMatchFileSnapshot(snapshotFilePath);
 }
 
 function getSnapshotFiles(name: string) {
