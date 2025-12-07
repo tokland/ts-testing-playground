@@ -100,7 +100,7 @@ export function recordAndReplayFnCalls<Fn extends AnyAsyncFunction>(options: {
                 });
                 throw new Error("Invariant broken");
             } else {
-                // No snapshot and we are in new or all mode, call the real function and snapshot
+                // No snapshot and we are in <new> or <all> mode, call the real function and snapshot
                 const returnValueReal = await options.realFunction(...args);
                 await expectCallMatchesSnapshot(snapshotFile.path, {
                     args: serializeArgs(args),
@@ -110,21 +110,21 @@ export function recordAndReplayFnCalls<Fn extends AnyAsyncFunction>(options: {
             }
         } else {
             // We have a snapshot, get the recorded args and return value
-            const expected = JSON.parse(snapshotFile.contents);
+            const expected = JSON.parse(snapshotFile.contents) as SerializedCall;
             const argsAreEqual = jsonEquals(serializeArgs(args), expected.args);
 
             if (argsAreEqual) {
                 return deserializeReturnValue(expected.returnValue);
             } else if (updateMode !== "all") {
-                // Args do not match, snapshot existed and we are not in all mode, fail the test
+                // Args do not match and we are not in <all> mode, fail the test
                 await expectCallMatchesSnapshot(snapshotFile.path, {
                     args: serializeArgs(args),
                     returnValue: expected.returnValue,
                 });
                 throw new Error("Unreachable");
             } else {
-                // Args do not match and we are in all mode, call the real function and snapshot
-                const realReturnValue = await options.realFunction(...args);
+                // Args do not match and we are in <all> mode, call the real function and snapshot
+                const realReturnValue = (await options.realFunction(...args)) as Awaited<ReturnType<Fn>>;
                 await expectCallMatchesSnapshot(snapshotFile.path, {
                     args: serializeArgs(args),
                     returnValue: serializeReturnValue(realReturnValue),
@@ -141,7 +141,7 @@ export function recordAndReplayFnCalls<Fn extends AnyAsyncFunction>(options: {
 
         if (missingCalls.length > 0) {
             const msg = [
-                `${index} of ${snapshotFiles.length} calls made. Missing:`,
+                `${index} of ${snapshotFiles.length} calls were made. Missing calls:`,
                 missingCalls.join("\n"),
                 `If any of these calls are not expected anymore, remove their snapshot files.`,
             ].join("\n");
@@ -184,7 +184,13 @@ function getSnapshotFiles(name: string) {
 }
 
 function getSnapshotsUpdateMode(): "none" | "new" | "all" {
-    return expect.getState().snapshotState["_updateSnapshot"];
+    const mode = expect.getState().snapshotState["_updateSnapshot"];
+
+    if (mode === "none" || mode === "new" || mode === "all") {
+        return mode;
+    } else {
+        throw new Error(`Unknown snapshot update mode: ${mode}`);
+    }
 }
 
 // This is not the typical behaviour for jest/vitest, but this way a diff is shown for every

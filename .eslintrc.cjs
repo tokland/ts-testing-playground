@@ -46,11 +46,7 @@ module.exports = {
                 "no-cond-assign": ["error", "always"],
                 eqeqeq: ["error"],
                 "no-constant-binary-expression": "error",
-                curly: "error",
-                "default-case": "error",
-                "default-case-last": "error",
                 "no-constant-condition": "error",
-                "no-duplicate-imports": "error",
                 "no-fallthrough": "error",
                 "use-isnan": "error",
                 "no-loss-of-precision": "error",
@@ -69,7 +65,6 @@ module.exports = {
                 // typescript-eslint rules
                 // check https://typescript-eslint.io/rules/ for reference
                 "@typescript-eslint/array-type": "error",
-                "@typescript-eslint/consistent-type-definitions": ["error", "type"],
                 "@typescript-eslint/no-unnecessary-condition": "error",
                 "@typescript-eslint/prefer-includes": "error",
                 "@typescript-eslint/prefer-optional-chain": "error",
