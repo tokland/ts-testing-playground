@@ -110,7 +110,7 @@ export function recordAndReplayFnCalls<Fn extends AnyAsyncFunction>(options: {
         } else {
             // We have a snapshot, get the recorded args and return value
             const expected = JSON.parse(snapshotFile.contents);
-            const argsAreEqual = areJsonObjectsEqual(serializeArgs(args), expected.args);
+            const argsAreEqual = jsonEquals(serializeArgs(args), expected.args);
 
             if (argsAreEqual) {
                 return deserializeReturnValue(expected.returnValue);
@@ -138,8 +138,12 @@ export function recordAndReplayFnCalls<Fn extends AnyAsyncFunction>(options: {
         const snapshotFiles = getSnapshotFiles(options.name);
         const missingCalls = snapshotFiles.slice(index).map(s => `  - ${s}`);
 
-        if (index < snapshotFiles.length) {
-            const msg = `${index} of ${snapshotFiles.length} calls made. Missing:\n${missingCalls.join("\n")}`;
+        if (missingCalls.length > 0) {
+            const msg = [
+                `${index} of ${snapshotFiles.length} calls made. Missing:`,
+                missingCalls.join("\n"),
+                `If any of these calls are not expected anymore, remove their snapshot files.`,
+            ].join("\n");
             return { success: false, error: msg };
         } else {
             return { success: true };
@@ -176,11 +180,8 @@ function getSnapshotFiles(name: string) {
     return fs
         .readdirSync(snapsFolder)
         .filter(filename => filename.startsWith(name + "-call-") && filename.endsWith(".json"))
-        .map(filename => path.join(snapsFolder, filename));
-}
-
-function areJsonObjectsEqual(obj1: JsonValue, obj2: JsonValue): boolean {
-    return JSON.stringify(obj1) === JSON.stringify(obj2);
+        .map(filename => path.join(snapsFolder, filename))
+        .map(filePath => path.relative(__dirname, filePath));
 }
 
 function getSnapshotsUpdateMode(): "none" | "new" | "all" {
@@ -198,4 +199,44 @@ function getSnapshotFile(currentIndex: number, name: string): { contents: string
     const snapshotFilePath = path.join(snapshotsFolder, `${name}-call-${currentIndex + 1}.json`);
     const contents = fs.existsSync(snapshotFilePath) ? fs.readFileSync(snapshotFilePath, "utf-8") : null;
     return { contents: contents, path: snapshotFilePath };
+}
+
+// Deep equality for valid JSON values.
+export function jsonEquals(a: JsonValue, b: JsonValue): boolean {
+    // Are they equal by reference or value?
+    if (a === b) return true;
+
+    // If types differ or one is null and the other isn't, they're not equal
+    if (typeof a !== typeof b || a === null || b === null) {
+        return false;
+    }
+
+    // If one is array and the other isn't
+    if (Array.isArray(a) || Array.isArray(b)) {
+        return false;
+    }
+
+    // Both arrays
+    if (Array.isArray(a) && Array.isArray(b)) {
+        if (a.length !== b.length) {
+            return false;
+        } else {
+            return a.every((item, index) => jsonEquals(item, b[index] || null));
+        }
+    }
+
+    // Objects
+    const aObj = a as { [key: string]: JsonValue };
+    const bObj = b as { [key: string]: JsonValue };
+
+    const aKeys = Object.keys(aObj).sort();
+    const bKeys = Object.keys(bObj).sort();
+
+    if (aKeys.length !== bKeys.length) {
+        return false;
+    } else if (!aKeys.every((key, i) => key === bKeys[i])) {
+        return false;
+    } else {
+        return aKeys.every(key => jsonEquals(aObj[key] || null, bObj[key] || null));
+    }
 }

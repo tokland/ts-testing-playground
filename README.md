@@ -2,13 +2,12 @@
 
 A playground exploring **declarative** patterns for mocking functions in Vitest.
 
-## Why Declarative Mocks?
-
-Traditional mocks often combine setup, behavior, and expectations directly inside test bodies. This quickly becomes difficult to read, reason about, and maintain.
+Traditional mocks often combine setup, behavior, and expectations directly inside test bodies. This quickly becomes difficult to read, reason about, and maintain. This project explores patterns
+to write declarative and easy-to-mantain tests.
 
 ## Modules
 
-### 1. Declarative (Ordered) Call Expectations
+### 1. Declarative Call Expectations
 
 Define the complete sequence of expected calls (arguments + return values),
 and the mock ensures that calls match _exactly_ and in _order_.
@@ -32,14 +31,14 @@ Supports pluggable JSON serialization and runtime validation.
 Useful when:
 
 - You want **strict control** over call sequences.
-- Store external APIs **stable mocks** without hand-maintaining them.
+- Store **real external APIs data** without hand-maintaining them.
 - You want **snapshot diffs** to inspect behavioral changes.
-- Tests must be **deterministic**, **fast** and runnable **offline**.
+- One the snapshots are in-place, tests should be **deterministic**, **fast** and runnable **offline**.
 
 ## Running the Project
 
 ```sh
-nvm use
-yarn install
-yarn test
+$ nvm use
+$ yarn install
+$ yarn test
 ```
