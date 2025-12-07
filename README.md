@@ -4,8 +4,7 @@ A playground exploring **declarative** patterns for mocking functions in Vitest.
 
 ## Why Declarative Mocks?
 
-Traditional mocks often mix setup, behavior, and expectations inside test bodies. This
-is quickly hard to read and maintain.
+Traditional mocks often combine setup, behavior, and expectations directly inside test bodies. This quickly becomes difficult to read, reason about, and maintain.
 
 ## Modules
 
@@ -19,13 +18,12 @@ and the mock ensures that calls match _exactly_ and in _order_.
 
 Useful when:
 
-- You want **strict control** over call sequences
-- You prefer **declarative** test setup over imperative mocking
+- You want **strict control** over call sequences.
+- You prefer **declarative** test setup over imperative mocking.
 
 ### 2. Snapshot-Based Record & Replay
 
-Record function calls into snapshots on the first run,
-then safely replay them on subsequent runs.
+Record function calls into snapshots on the first run, then safely replay them on subsequent runs.
 Supports pluggable JSON serialization and runtime validation.
 
 - **Module:** [`mock-fn-record-and-replay.ts`](src/mock-fn-record-and-replay.ts)
@@ -33,10 +31,10 @@ Supports pluggable JSON serialization and runtime validation.
 
 Useful when:
 
-- You want **strict control** over call sequences
-- Keep external APIs **stable mocks** without hand-maintaining them
-- You want **snapshot diffs** to inspect behavioral changes
-- Tests must be **deterministic** and runnable offline
+- You want **strict control** over call sequences.
+- Store external APIs **stable mocks** without hand-maintaining them.
+- You want **snapshot diffs** to inspect behavioral changes.
+- Tests must be **deterministic**, **fast** and runnable **offline**.
 
 ## Running the Project
 
