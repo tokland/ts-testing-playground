@@ -5,6 +5,76 @@ import path from "path";
 import "./FulfillableMock";
 import { FulfillableMock } from "./FulfillableMock";
 
+/**
+ * Utility for creating snapshot-backed *record-and-replay* mocks for async functions in Vitest.
+ *
+ * On the first test run, calls to the wrapped function are:
+ *   - Executed against the real function.
+ *   - Serialized (arguments + return value).
+ *   - Stored as individual JSON snapshot files.
+ *
+ * On subsequent runs, calls are:
+ *   - Matched against existing snapshots.
+ *   - Replayed deterministically using the recorded return values.
+ *
+ * This provides stable, declarative mocks that behave identically across machines and
+ * test runs, while still giving you full visibility through snapshot diffs when behavior changes.
+ *
+ * The mock also tracks how many calls were consumed, allowing you to assert that:
+ *   - All recorded calls have been replayed (`toBeFulfilled()`).
+ *   - Extra or missing calls surface as snapshot mismatches.
+ *
+ * ## Serialization
+ *
+ * You must provide:
+ *   - `serializeArgs` — converts the function's arguments into a JSON-compatible value.
+ *   - `serializeReturnValue` — converts the resolved return value into JSON-compatible form.
+ *   - `deserializeReturnValue` — performs the inverse operation when replaying.
+ *
+ * These functions give you full control over the shape and type safety of your snapshots.
+ *
+ * ## Snapshot Update Behavior (for developers)
+ *
+ * Vitest has three snapshot update modes:
+ *   - `"none"` — snapshots must match exactly; any difference fails the test.
+ *   - `"new"`  — new snapshots are created, but existing ones are not overwritten.
+ *   - `"all"`  — all snapshots may be updated if arguments differ.
+ *
+ * This module respects these modes when recording and replaying calls with an exception:
+ *  - When in `"all"` mode, only the first mismatched snapshot is updated per test run.
+ *    This allows you to review and accept changes one at a time, rather than having
+ *    all snapshots updated at once.
+ *
+ * ## Simple Example
+ *
+ * ```ts
+ * async function add(a: number, b: number): Promise<number> {
+ *     return a + b;
+ * }
+ *
+ * const add_ = recordAndReplayFnCalls<typeof add>({
+ *     name: "add",
+ *     realFunction: add,
+ *
+ *     // JSON-compatible serialization
+ *     serializeArgs: args => args,
+ *     serializeReturnValue: value => value,
+ *
+ *     // Type-safe deserialization (using Zod)
+ *     deserializeReturnValue: obj => z.number().parse(obj)
+ * });
+ *
+ * // On first run: executes real function and records snapshots.
+ * // On later runs: replays recorded results deterministically.
+ *
+ * expect(await add_(1, 2)).toBe(3);
+ * expect(await add_(5, 7)).toBe(12);
+ *
+ * // Ensures all recorded calls were consumed
+ * expect(add_).toBeFulfilled();
+ * ```
+ */
+
 export function recordAndReplayFnCalls<Fn extends AnyAsyncFunction>(options: {
     name: string;
     realFunction: Fn;
