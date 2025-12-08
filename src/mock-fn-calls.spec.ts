@@ -5,7 +5,8 @@ import { mockFnCalls } from "./mock-fn-calls";
 type Add = (values: { a: number; b: number }) => number;
 
 describe("Declarative mock function", () => {
-    it("validates that it's called with the expected args in the expected order", () => {
+    // Typical usage
+    it("validates that it's called with the expected args and returns values", () => {
         const add_ = mockFnCalls<Add>({
             expectedCalls: [
                 { args: [{ a: 1, b: 2 }], returnValue: 3 },

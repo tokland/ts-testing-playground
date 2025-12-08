@@ -1,5 +1,8 @@
-export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+export type JsonValue = string | number | boolean | null | JsonValue[] | JsonObject;
 
+type JsonObject = { [key: string]: JsonValue };
+
+// Deep by-value equality check for JSSON-compatible values
 export function jsonEquals(a: JsonValue, b: JsonValue): boolean {
     // Fast path for strict equality
     if (a === b) return true;
@@ -10,43 +13,40 @@ export function jsonEquals(a: JsonValue, b: JsonValue): boolean {
     // Different types -> not equal
     if (typeA !== typeB) return false;
 
-    // Both have the same type, do deeper checks based on type if needed
+    // Both values have the same type: perform custom checks for each type
     switch (typeA) {
-        // Simple types comparable by value
+        // Primitive types comparable by value (already compared above, do it again for clarity)
         case "null":
         case "string":
         case "number":
         case "boolean":
-            // We already checked by strict equality above, but let's do it again to avoid confusion
             return a === b;
-
         case "array":
-            const arrayA = a as JsonValue[];
-            const arrayB = b as JsonValue[];
-
-            if (arrayA.length !== arrayB.length) {
-                return false;
-            } else {
-                return arrayA.every((item, idx) => {
-                    return jsonEquals(item, arrayB[idx] as JsonValue);
-                });
-            }
-
+            return arrayEquals(a as JsonValue[], b as JsonValue[]);
         case "object":
-            const objA = a as { [key: string]: JsonValue };
-            const objB = b as { [key: string]: JsonValue };
-
-            const keysA = Object.keys(objA).sort();
-            const keysB = Object.keys(objB).sort();
-
-            if (keysA.length !== keysB.length) {
-                return false;
-            } else {
-                return keysA.every((k, idx) => {
-                    return k === keysB[idx] && jsonEquals(objA[k] as JsonValue, objB[k] as JsonValue);
-                });
-            }
+            return objectEquals(a as JsonObject, b as JsonObject);
     }
+}
+
+function arrayEquals(arrayA: JsonValue[], arrayB: JsonValue[]): boolean {
+    return (
+        arrayA.length === arrayB.length && //
+        arrayA.every((itemA, idx) => {
+            return jsonEquals(itemA, arrayB[idx] as JsonValue);
+        })
+    );
+}
+
+function objectEquals(objA: JsonObject, objB: JsonObject): boolean {
+    const keysA = Object.keys(objA);
+    const keysB = Object.keys(objB);
+
+    return (
+        keysA.length === keysB.length && //
+        Object.entries(objA).every(([key, valueA]) => {
+            return key in objB && jsonEquals(valueA, objB[key] as JsonValue);
+        })
+    );
 }
 
 // Get the type of a JsonValue (as defined in the JSON specification, not the quirky JS typeof)
