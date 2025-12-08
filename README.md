@@ -1,25 +1,18 @@
-# Declarative Vitest Function Mocks
+# Declarative Function Mocks for Typescript
 
-This is a playground to explore **declarative** patterns for mocking functions in Vitest.
-
-Traditional mocks often combine convoluted imperative setup which usually become
-difficult to read, reason about, and maintain. This project explores patterns
-to write declarative and easy-to-mantain function mocks.
+Traditional mocks often involve imperative and manual setup that may become
+difficult to read and maintain. This project explores different patterns
+to write declarative function mocks. It uses Vitest for the implementation, but the same
+ideas should work also for Jest.
 
 ## Modules
 
 ### 1. Declarative Call Expectations
 
-Define the complete sequence of expected calls (arguments + return values),
-and the mock ensures that calls match _exactly_ and in _order_.
+Define the complete sequence of expected calls (including arguments and return values), and the mock ensures that the functions receive the correct arguments and are invoked in the specified order.
 
 - **Module:** [`mock-fn-calls.ts`](src/mock-fn-calls.ts)
 - **Spec:** [`mock-fn-calls.spec.ts`](src/mock-fn-calls.spec.ts)
-
-Useful when:
-
-- You want **strict control** over call sequences.
-- You prefer **declarative** test setup over imperative mocking.
 
 ### 2. Snapshot-Based Record & Replay
 
@@ -29,12 +22,7 @@ Supports pluggable JSON serialization and runtime validation.
 - **Module:** [`mock-fn-record-and-replay.ts`](src/mock-fn-record-and-replay.ts)
 - **Spec:** [`mock-fn-record-and-replay.spec.ts`](src/mock-fn-record-and-replay.spec.ts)
 
-Useful when:
-
-- Store **real external APIs data** without hand-maintaining them.
-- You want **strict control** over call sequences.
-- You want **snapshot diffs** to inspect behavioral changes.
-- (Once the snapshots are in-place) tests should be **deterministic**, **fast** and runnable **offline**.
+A common use case for this pattern is testing complex API calls in data repositories within clean or hexagonal architectures. Like other snapshot‑based approaches, it is not particularly useful for TDD or as a formal specification, but it provides a stable “green‑light” reference that makes refactoring safer without the burden of manual function mocking. Once snapshots are created, tests become deterministic, fast, and fully offline.
 
 ## Running the Project
 
