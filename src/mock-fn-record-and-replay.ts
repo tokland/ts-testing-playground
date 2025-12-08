@@ -92,15 +92,13 @@ export function recordAndReplayFnCalls<Fn extends AnyAsyncFunction>(options: {
         const updateMode = getSnapshotsUpdateMode();
 
         if (!snapshotFile.contents) {
-            if (updateMode === "none") {
-                // No snapshot and we are not in new/all mode, fail the test comparing with null
+            if (updateMode === modes.NONE) {
                 await expectCallMatchesSnapshot(snapshotFile.path, {
                     args: serializeArgs(args),
                     returnValue: null,
                 });
                 throw new Error("Invariant broken");
             } else {
-                // No snapshot and we are in <new> or <all> mode, call the real function and snapshot
                 const returnValueReal = (await options.realFunction(...args)) as Awaited<ReturnType<Fn>>;
                 await expectCallMatchesSnapshot(snapshotFile.path, {
                     args: serializeArgs(args),
@@ -109,21 +107,12 @@ export function recordAndReplayFnCalls<Fn extends AnyAsyncFunction>(options: {
                 return returnValueReal;
             }
         } else {
-            // We have a snapshot, get the recorded args and return value
             const expected = JSON.parse(snapshotFile.contents) as SerializedCall;
             const argsAreEqual = jsonEquals(serializeArgs(args), expected.args);
 
             if (argsAreEqual) {
                 return deserializeReturnValue(expected.returnValue);
-            } else if (updateMode !== "all") {
-                // Args do not match and we are not in <all> mode, fail the test
-                await expectCallMatchesSnapshot(snapshotFile.path, {
-                    args: serializeArgs(args),
-                    returnValue: expected.returnValue,
-                });
-                throw new Error("Unreachable");
-            } else {
-                // Args do not match and we are in <all> mode, call the real function and snapshot
+            } else if (updateMode === modes.CREATE_AND_UPDATE) {
                 const realReturnValue = await options.realFunction(...args);
                 await expectCallMatchesSnapshot(snapshotFile.path, {
                     args: serializeArgs(args),
@@ -131,6 +120,12 @@ export function recordAndReplayFnCalls<Fn extends AnyAsyncFunction>(options: {
                 });
                 preventFurtherSnapshotUpdates();
                 return realReturnValue as Awaited<ReturnType<Fn>>;
+            } else {
+                await expectCallMatchesSnapshot(snapshotFile.path, {
+                    args: serializeArgs(args),
+                    returnValue: expected.returnValue,
+                });
+                throw new Error("Unreachable");
             }
         }
     }) as Mock<AsyncFunction<Fn>> & FulfillableMock;
@@ -184,13 +179,26 @@ function getSnapshotFiles(name: string) {
         .map(filePath => path.relative(__dirname, filePath));
 }
 
-function getSnapshotsUpdateMode(): "none" | "new" | "all" {
+type Mode = (typeof modes)[keyof typeof modes];
+
+const modes = {
+    NONE: "none",
+    CREATE: "new",
+    CREATE_AND_UPDATE: "all",
+};
+
+function getSnapshotsUpdateMode(): Mode {
     const mode = expect.getState().snapshotState["_updateSnapshot"] as string;
 
-    if (mode === "none" || mode === "new" || mode === "all") {
-        return mode;
-    } else {
-        throw new Error(`Unknown snapshot update mode: ${mode}`);
+    switch (mode) {
+        case "none":
+            return modes.NONE;
+        case "new":
+            return modes.CREATE;
+        case "all":
+            return modes.CREATE_AND_UPDATE;
+        default:
+            throw new Error(`Unknown snapshot update mode: ${mode}`);
     }
 }
 
