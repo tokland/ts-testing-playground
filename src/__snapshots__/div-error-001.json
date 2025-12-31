@@ -1,0 +1,12 @@
+{
+    "args": [
+        4,
+        0
+    ],
+    "result": {
+        "success": false,
+        "error": {
+            "message": "Division by zero"
+        }
+    }
+}

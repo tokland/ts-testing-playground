@@ -2,33 +2,32 @@ import { expect, describe, it } from "vitest";
 
 import { mockFnCalls } from "./mock-fn-calls";
 
-type Add = (values: { a: number; b: number }) => number;
+type Add = (a: number, b: number) => number;
 
 describe("Declarative mock function", () => {
-    // Typical usage
     it("validates that it's called with the expected args and returns values", () => {
         const add_ = mockFnCalls<Add>({
             expectedCalls: [
-                { args: [{ a: 1, b: 2 }], returnValue: 3 },
-                { args: [{ a: 5, b: 7 }], returnValue: 12 },
+                { args: [1, 2], returnValue: 3 },
+                { args: [5, 7], returnValue: 12 },
             ],
             serialize: args => args,
         });
 
-        expect(add_({ a: 1, b: 2 })).toBe(3);
-        expect(add_({ a: 5, b: 7 })).toBe(12);
+        expect(add_(1, 2)).toBe(3);
+        expect(add_(5, 7)).toBe(12);
         expect(add_).toBeFulfilled();
     });
 
     it("fails when called with unexpected arguments", () => {
         const add_ = mockFnCalls<Add>({
-            expectedCalls: [{ args: [{ a: 1, b: 4 }], returnValue: 5 }],
+            expectedCalls: [{ args: [1, 4], returnValue: 5 }],
             serialize: args => args,
         });
 
         expect(() => {
-            return add_({ a: 1, b: 2 });
-        }).toThrow("expected [ { a: 1, b: 2 } ] to deeply equal [ { a: 1, b: 4 } ]");
+            return add_(1, 2);
+        }).toThrow("expected [ 1, 2 ] to deeply equal [ 1, 4 ]");
     });
 
     it("fails when a non-defined call is made", () => {
@@ -38,13 +37,13 @@ describe("Declarative mock function", () => {
         });
 
         expect(() => {
-            return add_({ a: 1, b: 2 });
+            return add_(1, 2);
         }).toThrow("0 calls were available (this was #1)");
     });
 
     it("fails when too few calls are made", () => {
         const add_ = mockFnCalls<Add>({
-            expectedCalls: [{ args: [{ a: 1, b: 2 }], returnValue: 3 }],
+            expectedCalls: [{ args: [1, 2], returnValue: 3 }],
             serialize: args => args,
         });
 

@@ -1,193 +1,374 @@
-import { expect, Mock, vi } from "vitest";
+import { expect } from "vitest";
 import fs from "fs";
 import path from "path";
 
-import "./FulfillableMock";
-import { FulfillableMock } from "./FulfillableMock";
+import "./FulfillableMock"; // Augment expect with toBeFulfilled matcher
+import { FulfillableMock, FulfillableResult } from "./FulfillableMock";
 import { jsonEquals, JsonValue } from "./json-equals";
 
 /**
- * Utility for creating snapshot-backed *record-and-replay* mocks for async functions in Vitest.
+ * Snapshot-backed *record-and-replay* mock for async functions.
  *
- * On the first test run, calls to the wrapped function are:
- *   - Executed against the real function.
- *   - Serialized (arguments + return value).
- *   - Stored as individual JSON snapshot files.
+ * Records function calls (arguments + results) as JSON snapshots on first run, then replays
+ * them deterministically on subsequent runs.  Supports snapshotting both successful returns
+ * and thrown errors.
  *
- * On subsequent runs, calls are:
- *   - Matched against existing snapshots.
- *   - Replayed deterministically using the recorded return values.
+ * ## How It Works
  *
- * This provides stable, declarative mocks that behave identically across machines and
- * test runs, while still giving you full visibility through snapshot diffs when behavior changes.
+ * **First test run (record mode):**
+ *   - Calls execute against the real function
+ *   - Arguments, return values, and errors are serialized to individual JSON files
+ *   - Files are named:  `__snapshots__/{name}-001.json`, `{name}-002.json`, etc.
  *
- * The mock also tracks how many calls were consumed, allowing you to assert that:
- *   - All recorded calls have been replayed (`toBeFulfilled()`).
- *   - Extra or missing calls surface as snapshot mismatches.
+ * **Subsequent runs (replay mode):**
+ *   - Calls are matched against existing snapshots by call order and arguments
+ *   - Recorded return values are deserialized and returned (or errors re-thrown)
+ *   - Mismatched arguments trigger snapshot diff failures (standard vitest workflow)
+ *
+ * **Assertions:**
+ *   - `expect(mock).toBeFulfilled()` verifies all recorded snapshots were replayed
+ *   - Leftover snapshots indicate missing test calls (prompts you to delete stale files)
  *
  * ## Serialization
  *
- * You must provide:
- *   - `serializeArgs` — converts the function's arguments into a JSON-compatible value.
- *   - `serializeReturnValue` — converts the resolved return value into JSON-compatible value.
- *   - `deserializeReturnValue` — performs the inverse operation when replaying.
+ * You must provide serialization functions for full control over snapshot format and type safety:
  *
- * These functions give you full control over the shape and type safety of your snapshots.
+ * **serialize:**
+ *   - `args:  (args) => JsonValue` - Convert function arguments to JSON
+ *   - `success: (value) => JsonValue` - Convert successful return values to JSON
+ *   - `error: (err) => JsonValue` - Convert thrown errors to JSON
  *
- * ## Snapshot Update Behavior (for developers)
+ * **deserialize:**
+ *   - `success: (json) => ReturnValue` - Reconstruct return values from JSON
+ *   - `error: (json) => unknown` - Reconstruct errors from JSON (will be re-thrown)
+ *
+ * This design allows you to:
+ *   - Strip non-serializable data (class instances, functions, circular refs)
+ *   - Validate snapshots with runtime type checkers (Zod, io-ts, etc.)
+ *   - Reconstruct proper error instances (not just plain objects)
+ *
+ * ## Vitest Snapshot Modes
  *
  * Vitest has three snapshot update modes:
- *   - `"none"` — snapshots must match exactly; any difference fails the test.
- *   - `"new"`  — new snapshots are created, but existing ones are not overwritten.
- *   - `"all"`  — all snapshots may be updated if arguments differ.
  *
- * This module respects these modes when recording and replaying calls with an exception:
- *  - When in `"all"` mode, only the first mismatched snapshot is updated per test run.
- *    This allows you to review and accept changes one at a time, rather than having
- *    all snapshots updated at once.
+ *   - `"none"` (`CI=1 vitest`) - No snapshots created/updated.  Mismatches fail the test.
+ *   - `"new"` (`vitest`) - New snapshots created, existing ones are NOT overwritten.
+ *   - `"all"` (`vitest -u`) - All snapshots may be created or updated.
  *
- * ## Simple Example
+ * The real function is only called in `"new"` or `"all"` modes when fresh data is needed.
+ *
+ * ### Interactive Workflow with `allowOnlyOneUpdatePerTest`
+ *
+ * Set `allowOnlyOneUpdatePerTest: true` so that only the **first** mismatched snapshot is
+ * updated per test in `all` mode. This allows you to review each change individually.
+ *
+ * ## Example
  *
  * ```ts
- * async function add(a: number, b: number): Promise<number> {
- *     return a + b;
+ * import { z } from "zod";
+ *
+ * async function divAsync(a: number, b: number): Promise<number> {
+ *     if (b === 0) throw new Error("Division by zero");
+ *     return a / b;
  * }
  *
- * const add_ = recordAndReplayFnCalls<typeof add>({
- *     name: "add",
- *     realFunction: add,
+ * test("divAsync mock", async () => {
+ *     const divMock = recordAndReplayFnMock({
+ *         name: "div-async",
+ *         fn: divAsync,
  *
- *     // JSON-compatible serialization
- *     serializeArgs: args => args,
- *     serializeReturnValue: value => value,
+ *         serialize: {
+ *             args: args => args,  // Arguments are already JSON-safe
+ *             success: value => value,  // Numbers are JSON-safe
+ *             error: serializeError,  // Convert Error to { message }
+ *         },
  *
- *     // Type-safe deserialization (using Zod)
- *     deserializeReturnValue: obj => z.number().parse(obj)
+ *         deserialize: {
+ *             success: obj => z.number().parse(obj),  // No transformation, but validate snapshot type
+ *             error: deserializeError,  // Reconstruct Error instance
+ *         },
+ *
+ *         allowOnlyOneUpdatePerTest: true,
+ *     });
+ *
+ *     // Success case
+ *     expect(await divMock(1, 2)).toBe(3);
+ *     expect(await divMock(5, 7)).toBe(12);
+ *
+ *     // Error case
+ *     await expect(divMock(10, 0)).rejects.toThrow("Division by zero");
+ *
+ *     // Verify all snapshots were used
+ *     expect(divMock).toBeFulfilled();
  * });
+ * ```
  *
- * // On first run: executes real function and records snapshots.
- * // On later runs: replays recorded results deterministically.
+ * ## Snapshot File Format
  *
- * expect(await add_(1, 2)).toBe(3);
- * expect(await add_(5, 7)).toBe(12);
+ * Each call generates a file like `__snapshots__/NAME-NNN.json`:
  *
- * // Ensures all recorded calls were consumed
- * expect(add_).toBeFulfilled();
+ * ```json
+ * {
+ *   "args": [1, 2],
+ *   "result": { "success": true, "value": 3 }
+ * }
+ * ```
+ *
+ * Or for errors:
+ *
+ * ```json
+ * {
+ *   "args": [10, 0],
+ *   "result": { "success": false, "error": { "message": "Division by zero" } }
+ * }
  * ```
  */
 
-export function recordAndReplayFnCalls<Fn extends AnyAsyncFunction>(options: {
+export type Options<Args extends unknown[], ReturnValue> = {
     name: string;
-    realFunction: Fn;
-    serializeArgs: (args: Parameters<Fn>) => JsonValue;
-    serializeReturnValue: (obj: Awaited<ReturnType<Fn>>) => JsonValue;
-    deserializeReturnValue: (obj: JsonValue) => Awaited<ReturnType<Fn>>;
-}): Mock<AsyncFunction<Fn>> & FulfillableMock {
-    const { serializeArgs, serializeReturnValue, deserializeReturnValue } = options;
-    let index = 0;
+    fn: (...args: Args) => Promise<ReturnValue>;
+    serialize: {
+        args: (args: Args) => JsonValue;
+        success: (val: ReturnValue) => JsonValue;
+        error: (err: ErrorValue) => JsonValue;
+    };
+    deserialize: {
+        success: (json: JsonValue) => ReturnValue;
+        error: (json: JsonValue) => ErrorValue;
+    };
+    snapshotsFolder?: string;
+    allowOnlyOneUpdatePerTest?: boolean;
+};
 
-    const mockFn = vi.fn(async (...args: Parameters<Fn>): Promise<Awaited<ReturnType<Fn>>> => {
-        const currentIndex = index++;
-        const snapshotFile = getSnapshotFile(currentIndex, options.name);
-        const updateMode = getSnapshotsUpdateMode();
+type ErrorValue = unknown;
 
-        if (!snapshotFile.contents) {
-            if (updateMode === modes.NONE) {
-                await expectCallMatchesSnapshot(snapshotFile.path, {
-                    args: serializeArgs(args),
-                    returnValue: null,
-                });
-                throw new Error("Invariant broken");
-            } else {
-                const returnValueReal = (await options.realFunction(...args)) as Awaited<ReturnType<Fn>>;
-                await expectCallMatchesSnapshot(snapshotFile.path, {
-                    args: serializeArgs(args),
-                    returnValue: serializeReturnValue(returnValueReal),
-                });
-                return returnValueReal;
-            }
-        } else {
-            const expected = JSON.parse(snapshotFile.contents) as SerializedCall;
-            const argsAreEqual = jsonEquals(serializeArgs(args), expected.args);
+export type RecordAndReplayMock<Args extends unknown[], ReturnValue> = ((...args: Args) => Promise<ReturnValue>) &
+    FulfillableMock;
 
-            if (argsAreEqual) {
-                return deserializeReturnValue(expected.returnValue);
-            } else if (updateMode === modes.CREATE_AND_UPDATE) {
-                const realReturnValue = await options.realFunction(...args);
-                await expectCallMatchesSnapshot(snapshotFile.path, {
-                    args: serializeArgs(args),
-                    returnValue: serializeReturnValue(realReturnValue),
-                });
-                preventFurtherSnapshotUpdates();
-                return realReturnValue as Awaited<ReturnType<Fn>>;
-            } else {
-                await expectCallMatchesSnapshot(snapshotFile.path, {
-                    args: serializeArgs(args),
-                    returnValue: expected.returnValue,
-                });
-                throw new Error("Unreachable");
-            }
-        }
-    }) as Mock<AsyncFunction<Fn>> & FulfillableMock;
+export function recordAndReplayFnMock<Args extends unknown[], ReturnValue>(
+    options: Options<Args, ReturnValue>,
+): RecordAndReplayMock<Args, ReturnValue> {
+    const allowOnlyOneUpdatePerTest = options.allowOnlyOneUpdatePerTest ?? false;
+    const snapshotsFolder = options.snapshotsFolder ?? getDefaultSnapshotsFolder();
+    const state = new MockState();
 
-    mockFn.isFulfilled = () => {
-        const snapshotFiles = getSnapshotFiles(options.name);
-        const missingCalls = snapshotFiles.slice(index).map(s => `  - ${s}`);
+    const mockFn = async (...args: Args): Promise<ReturnValue> => {
+        const mock = new RecordAndReplayFn({
+            ...options,
+            args: args,
+            snapshotsFolder: snapshotsFolder,
+            allowOnlyOneUpdatePerTest: allowOnlyOneUpdatePerTest,
+            state: state,
+        });
 
-        if (missingCalls.length > 0) {
-            const msg = [
-                `${index} of ${snapshotFiles.length} calls were made.`,
-                `The following calls are missing:`,
-                missingCalls.join("\n"),
-                `If these calls are no longer relevant, delete their snapshot files.`,
-            ].join("\n");
-            return { success: false, error: msg };
-        } else {
-            return { success: true };
+        switch (true) {
+            case !mock.snapshotExists && mock.inMode(CREATE, CREATE_AND_UPDATE):
+                return mock.callFunctionAndCreateSnapshot();
+            case !mock.snapshotExists && mock.inMode(NONE):
+                return mock.failNoSnapshot();
+            case mock.snapshotExists && mock.argsMatch && mock.inMode(NONE, CREATE, CREATE_AND_UPDATE):
+                return mock.deserializeResultFromSnapshot();
+            case mock.snapshotExists && !mock.argsMatch && mock.inMode(CREATE_AND_UPDATE):
+                return mock.callFunctionAndUpdateSnapshot();
+            case mock.snapshotExists && !mock.argsMatch && mock.inMode(NONE, CREATE):
+                return mock.failArgsMismatch();
+            default:
+                throw new Error("Unhandled mock state");
         }
     };
 
-    return mockFn;
+    return Object.assign(mockFn as RecordAndReplayMock<Args, ReturnValue>, {
+        isFulfilled: () => {
+            return isMockFulfilled({
+                name: options.name,
+                callsCount: state.index,
+                snapshotsFolder: snapshotsFolder,
+            });
+        },
+    });
 }
 
-// Internal helpers
+/* Exported Error serialization/deserialization helpers, only for strict Error objects */
 
-type AnyAsyncFunction = (...args: any[]) => Promise<any>;
+export function serializeError(err: unknown): { message: string } {
+    if (err instanceof Error && Object.getPrototypeOf(err) === Error.prototype) {
+        return { message: err.message };
+    } else {
+        const constructor = typeof err === "object" && err !== null ? err.constructor : null;
+        const msg = [
+            `Cannot serialize non-Error object (constructor: ${constructor?.name || "unknown"})`,
+            "Extend serialize.error/deserialize.error to support that error type.",
+        ].join(" ");
+        throw new Error(msg);
+    }
+}
 
-type AsyncFunction<AsyncFn extends AnyAsyncFunction> = (
-    ...args: Parameters<AsyncFn>
-) => Promise<Awaited<ReturnType<AsyncFn>>>;
+export function deserializeError(obj: JsonValue): Error {
+    if (typeof obj === "object" && obj !== null && "message" in obj && typeof obj.message === "string") {
+        return new Error(obj.message);
+    } else {
+        throw new Error("Cannot deserialize error from invalid object");
+    }
+}
+
+/* Internal helpers */
+
+type ConstructorOptions<Args extends unknown[], ReturnValue> = Required<Options<Args, ReturnValue>> & {
+    args: Args;
+    snapshotsFolder: string;
+    allowOnlyOneUpdatePerTest: boolean;
+    state: MockState;
+};
+
+class RecordAndReplayFn<Args extends unknown[], ReturnValue> {
+    public mode: Mode;
+    private snapshotFile: SnapshotFile;
+
+    constructor(private options: ConstructorOptions<Args, ReturnValue>) {
+        const currentIndex = this.options.state.index;
+        this.options.state.incrementIndex();
+
+        this.snapshotFile = getSnapshotFile({
+            name: this.options.name,
+            index: currentIndex,
+            snapshotsFolder: this.options.snapshotsFolder,
+        });
+        this.mode = getSnapshotsMode();
+    }
+
+    inMode(...modesToCheck: Mode[]): boolean {
+        return modesToCheck.includes(this.mode);
+    }
+
+    get argsMatch(): boolean {
+        return jsonEquals(this.argsSerialized, this.expectedSerializedCall.args);
+    }
+
+    get snapshotExists(): boolean {
+        return !!this.snapshotFile.call;
+    }
+
+    async failNoSnapshot(): Promise<never> {
+        await this.expectResultToMatchSnapshot({ success: true, data: null });
+        throw new Error("Unreachable");
+    }
+
+    async deserializeResultFromSnapshot(): Promise<ReturnValue> {
+        const { result } = this.expectedSerializedCall;
+
+        if (result.success) {
+            return Promise.resolve(this.options.deserialize.success(result.data));
+        } else {
+            return Promise.reject(this.options.deserialize.error(result.error));
+        }
+    }
+
+    async callFunctionAndCreateSnapshot(): Promise<ReturnValue> {
+        return this.callFunctionAndSaveSnapshot({ allowOnlyOneUpdatePerTest: false });
+    }
+
+    async callFunctionAndUpdateSnapshot(): Promise<ReturnValue> {
+        return this.callFunctionAndSaveSnapshot(this.options);
+    }
+
+    async failArgsMismatch(): Promise<never> {
+        await this.expectResultToMatchSnapshot(this.expectedSerializedCall.result);
+        throw new Error("Unreachable");
+    }
+
+    private async callFunctionAndSaveSnapshot(options: { allowOnlyOneUpdatePerTest: boolean }): Promise<ReturnValue> {
+        if (options.allowOnlyOneUpdatePerTest && this.options.state.updatedCount > 0) {
+            throw new Error("Snapshot update already performed in this test. Rerun the test to continue.");
+        }
+
+        this.options.state.incrementUpdates();
+
+        try {
+            const returnValue = await this.options.fn(...this.options.args);
+
+            await this.expectResultToMatchSnapshot({
+                success: true,
+                data: this.options.serialize.success(returnValue),
+            });
+
+            return returnValue;
+        } catch (err) {
+            await this.expectResultToMatchSnapshot({
+                success: false,
+                error: this.options.serialize.error(err as ErrorValue),
+            });
+
+            throw err;
+        }
+    }
+
+    private get argsSerialized() {
+        return this.options.serialize.args(this.options.args);
+    }
+
+    private get expectedSerializedCall(): SerializedCall {
+        return orThrow(this.snapshotFile.call, "Snapshot does not exist");
+    }
+
+    private expectResultToMatchSnapshot(result: SerializedCall["result"]) {
+        const call: SerializedCall = {
+            args: this.argsSerialized,
+            result: result,
+        };
+        const serializedCallStr = JSON.stringify(call, null, 4) + "\n";
+        return expect(serializedCallStr).toMatchFileSnapshot(this.snapshotFile.path);
+    }
+}
+
+function orThrow<T>(value: T | null, message: string): T {
+    if (value === null) throw new Error(message);
+    return value;
+}
+
+function getSnapshotFiles(name: string, snapshotsFolder: string): string[] {
+    if (!fs.existsSync(snapshotsFolder)) return [];
+
+    return fs
+        .readdirSync(snapshotsFolder)
+        .filter(filename => filename.startsWith(name + "-") && filename.endsWith(".json"))
+        .map(filename => path.join(snapshotsFolder, filename))
+        .map(filePath => path.relative(process.cwd(), filePath));
+}
+
+function isMockFulfilled(options: { name: string; callsCount: number; snapshotsFolder: string }): FulfillableResult {
+    const { name, callsCount, snapshotsFolder } = options;
+    const snapshotFiles = getSnapshotFiles(name, snapshotsFolder);
+    const missingCalls = snapshotFiles.slice(callsCount).map(s => `  - ${s}`);
+
+    if (missingCalls.length > 0) {
+        const error = [
+            `${callsCount} of ${snapshotFiles.length} calls were made.`,
+            `The following snapshot calls were missing:`,
+            missingCalls.join("\n"),
+            `If they are no longer relevant, delete these files.`,
+        ];
+        return { success: false, error: error.join("\n") };
+    } else {
+        return { success: true };
+    }
+}
+
+type Result<Data, Error> = { success: true; data: Data } | { success: false; error: Error };
 
 type SerializedCall = {
     args: JsonValue;
-    returnValue: JsonValue;
+    result: Result<JsonValue, JsonValue>;
 };
-
-function expectCallMatchesSnapshot(snapshotFilePath: string, call: SerializedCall) {
-    const pretty = JSON.stringify(call, null, 4);
-    return expect(pretty).toMatchFileSnapshot(snapshotFilePath);
-}
-
-function getSnapshotFiles(name: string) {
-    const { snapshotState } = expect.getState();
-    const snapsFolder = path.dirname(snapshotState.snapshotPath);
-
-    return fs
-        .readdirSync(snapsFolder)
-        .filter(filename => filename.startsWith(name + "-call-") && filename.endsWith(".json"))
-        .map(filename => path.join(snapsFolder, filename))
-        .map(filePath => path.relative(__dirname, filePath));
-}
 
 type Mode = (typeof modes)[keyof typeof modes];
 
 const modes = {
-    NONE: "none",
-    CREATE: "new",
-    CREATE_AND_UPDATE: "all",
-};
+    NONE: "NONE",
+    CREATE: "CREATE",
+    CREATE_AND_UPDATE: "CREATE_AND_UPDATE",
+} as const;
 
-function getSnapshotsUpdateMode(): Mode {
+function getSnapshotsMode(): Mode {
     const mode = expect.getState().snapshotState["_updateSnapshot"] as string;
 
     switch (mode) {
@@ -198,19 +379,71 @@ function getSnapshotsUpdateMode(): Mode {
         case "all":
             return modes.CREATE_AND_UPDATE;
         default:
-            throw new Error(`Unknown snapshot update mode: ${mode}`);
+            throw new Error(`Unsupported snapshot update mode: ${mode}`);
     }
 }
 
-// This is not the typical behaviour for jest/vitest, but this way a diff is shown for every
-// snapshot that changes (the user may update them one by one by pressing 'u' in watch mode)
-function preventFurtherSnapshotUpdates() {
-    expect.getState().snapshotState["_updateSnapshot"] = "none";
+function getDefaultSnapshotsFolder(): string {
+    return path.dirname(expect.getState().snapshotState.snapshotPath);
 }
 
-function getSnapshotFile(currentIndex: number, name: string): { contents: string | null; path: string } {
-    const snapshotsFolder = path.dirname(expect.getState().snapshotState.snapshotPath);
-    const snapshotFilePath = path.join(snapshotsFolder, `${name}-call-${currentIndex + 1}.json`);
-    const contents = fs.existsSync(snapshotFilePath) ? fs.readFileSync(snapshotFilePath, "utf-8") : null;
-    return { contents: contents, path: snapshotFilePath };
+type SnapshotFile = {
+    path: string;
+    call: SerializedCall | null;
+};
+
+function getSnapshotFile(options: { index: number; name: string; snapshotsFolder: string }): SnapshotFile {
+    const { index, name, snapshotsFolder } = options;
+    const filename = `${name}-${padZeros(index + 1, 3)}.json`;
+    const snapshotPath = path.join(snapshotsFolder, filename);
+
+    if (fs.existsSync(snapshotPath)) {
+        const json = safeJsonParse(fs.readFileSync(snapshotPath, "utf-8"));
+        if (!isSerializedCall(json)) console.error("Invalid snapshot content:", json);
+        const call = isSerializedCall(json) ? json : null;
+        return { call: call, path: snapshotPath };
+    } else {
+        return { call: null, path: snapshotPath };
+    }
 }
+
+function safeJsonParse(json: string): JsonValue {
+    try {
+        return JSON.parse(json) as JsonValue;
+    } catch {
+        console.error("Failed to parse JSON:", json);
+        return null;
+    }
+}
+
+function padZeros(num: number, size: number): string {
+    return num.toString().padStart(size, "0");
+}
+
+function isSerializedCall(obj: JsonValue): obj is SerializedCall {
+    return (
+        typeof obj === "object" &&
+        obj !== null &&
+        "args" in obj &&
+        "result" in obj &&
+        typeof obj.result === "object" &&
+        obj.result !== null &&
+        "success" in obj.result
+    );
+}
+
+// Encapsulated mock state to track updates and call index
+class MockState {
+    public updatedCount = 0;
+    public index = 0;
+
+    incrementUpdates() {
+        this.updatedCount++;
+    }
+
+    incrementIndex() {
+        this.index++;
+    }
+}
+
+const { NONE, CREATE, CREATE_AND_UPDATE } = modes;

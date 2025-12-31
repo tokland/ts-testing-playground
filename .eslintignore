@@ -180,4 +180,4 @@ TODO
 # eslintignore specific
 
 .yarn
-vitest.config.ts
+vitest*.config.ts

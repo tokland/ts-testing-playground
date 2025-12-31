@@ -1,0 +1,10 @@
+{
+    "args": [
+        9,
+        3
+    ],
+    "result": {
+        "success": true,
+        "data": 3
+    }
+}

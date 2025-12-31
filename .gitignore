@@ -124,6 +124,7 @@ dist
 
 # Stores VSCode versions used for testing VSCode extensions
 .vscode-test
+*.code-workspace
 
 # yarn v2
 .yarn/cache
@@ -138,3 +139,6 @@ dist
 node_modules
 TODO
 .envrc
+src/__snapshots-example__/
+src/play-*
+*-only.config.ts

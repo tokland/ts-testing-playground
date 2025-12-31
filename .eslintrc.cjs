@@ -70,7 +70,6 @@ module.exports = {
                 "@typescript-eslint/prefer-optional-chain": "error",
                 "@typescript-eslint/prefer-reduce-type-parameter": "error",
                 "@typescript-eslint/prefer-string-starts-ends-with": "error",
-                "@typescript-eslint/ban-types": "error",
                 "@typescript-eslint/no-explicit-any": "error",
                 "@typescript-eslint/no-for-in-array": "error",
                 "@typescript-eslint/no-unsafe-call": "error",
@@ -78,6 +77,10 @@ module.exports = {
                 "@typescript-eslint/no-unsafe-member-access": "error",
                 "@typescript-eslint/no-var-requires": "error",
                 "@typescript-eslint/restrict-plus-operands": "error",
+                "@typescript-eslint/no-unused-vars": [
+                    "warn",
+                    { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" },
+                ],
             },
         },
     ],
